@@ -1,0 +1,7 @@
+# Unreal generated outputs
+**/Binaries/
+**/Intermediate/
+
+# Common misspellings / alternate generated directory names
+**/Binary/
+**/Immediate/
