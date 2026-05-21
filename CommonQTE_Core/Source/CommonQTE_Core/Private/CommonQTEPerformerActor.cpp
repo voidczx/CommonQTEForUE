@@ -35,6 +35,7 @@ void ACommonQTEPerformerActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	OutboundRollBackMessageQueue.Reset();
 	RollBackMessageQueue.Reset();
 	PredictionRecords.Reset();
+	LastAppliedRollBackPredictionId = 0;
 	bLocalPredictionDrainScheduled = false;
 	bRollBackDrainScheduled = false;
 	bHasInitialStateSnapshot = false;
@@ -145,6 +146,25 @@ void ACommonQTEPerformerActor::FlushRollBackMessagesToClient()
 	}
 }
 
+void ACommonQTEPerformerActor::AcknowledgePredictionMessage(int32 PredictionId)
+{
+	if (PredictionId <= 0)
+	{
+		UE_LOG(LogCommonQTE, Warning, TEXT("AcknowledgePredictionMessage rejected invalid prediction id. PredictionId=%d Performer=%s"), PredictionId, *GetNameSafe(this));
+		return;
+	}
+
+	const APlayerController* OwnerPlayerController = Cast<APlayerController>(GetOwner());
+	if (HasAuthority() && OwnerPlayerController != nullptr && OwnerPlayerController->NetConnection != nullptr)
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("Prediction ack sent to client. PredictionId=%d Performer=%s Owner=%s"), PredictionId, *GetNameSafe(this), *GetNameSafe(OwnerPlayerController));
+		SendPredictionAckToClient(PredictionId);
+		return;
+	}
+
+	PrunePredictionRecordsUpTo(PredictionId);
+}
+
 TArray<FCommonQTEPerformerPredictionMessage> ACommonQTEPerformerActor::ConsumeLocalPredictionMessages()
 {
 	TArray<FCommonQTEPerformerPredictionMessage> Messages = LocalPredictionMessageQueue;
@@ -176,6 +196,12 @@ void ACommonQTEPerformerActor::SendRollBackMessagesToClient_Implementation(const
 {
 	UE_LOG(LogCommonQTE, Log, TEXT("Client received rollback RPC. Count=%d Performer=%s"), Messages.Num(), *GetNameSafe(this));
 	ReceiveRollBackMessages(Messages);
+}
+
+void ACommonQTEPerformerActor::SendPredictionAckToClient_Implementation(int32 PredictionId)
+{
+	UE_LOG(LogCommonQTE, Verbose, TEXT("Client received prediction ack RPC. PredictionId=%d Performer=%s"), PredictionId, *GetNameSafe(this));
+	PrunePredictionRecordsUpTo(PredictionId);
 }
 
 void ACommonQTEPerformerActor::OnRep_InitialStateSnapshot()
@@ -310,6 +336,7 @@ void ACommonQTEPerformerActor::ResetPredictedStateFromInitialState()
 {
 	PredictedStateSnapshot = InitialStateSnapshot;
 	PredictionRecords.Reset();
+	LastAppliedRollBackPredictionId = 0;
 	NextPredictionId = 1;
 	bHasInitialStateSnapshot = InitialStateSnapshot.WholeHandle.IsValid();
 	FCommonQTEStateRuntime::NormalizeStateSnapshot(PredictedStateSnapshot);
@@ -441,6 +468,12 @@ bool ACommonQTEPerformerActor::ApplyPredictionMessage(const FCommonQTEPerformerP
 
 bool ACommonQTEPerformerActor::ApplyRollBackMessage(const FCommonQTEPerformerRollBackMessage& Message, FCommonQTEStateSnapshot& OutStateBeforeRollBack, FCommonQTEStateSnapshot& OutStateAfterRollBack)
 {
+	if (Message.PredictionId > 0 && Message.PredictionId <= LastAppliedRollBackPredictionId)
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("ApplyRollBackMessage ignored stale rollback. MessageHandle=%d PredictionId=%d LastAppliedRollBackPredictionId=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, LastAppliedRollBackPredictionId, *GetNameSafe(this));
+		return false;
+	}
+
 	if (!Message.AuthoritativeStateSnapshot.WholeHandle.IsValid())
 	{
 		UE_LOG(LogCommonQTE, Warning, TEXT("ApplyRollBackMessage rejected because authoritative snapshot handle is invalid. MessageHandle=%d PredictionId=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, *GetNameSafe(this));
@@ -453,22 +486,68 @@ bool ACommonQTEPerformerActor::ApplyRollBackMessage(const FCommonQTEPerformerRol
 		return false;
 	}
 
+	TArray<FCommonQTEPerformerPredictionRecord> PendingPredictionRecords;
+	if (Message.PredictionId > 0)
+	{
+		for (const FCommonQTEPerformerPredictionRecord& PredictionRecord : PredictionRecords)
+		{
+			if (PredictionRecord.PredictionId > Message.PredictionId)
+			{
+				PendingPredictionRecords.Add(PredictionRecord);
+			}
+		}
+		PendingPredictionRecords.Sort([](const FCommonQTEPerformerPredictionRecord& Left, const FCommonQTEPerformerPredictionRecord& Right)
+		{
+			return Left.PredictionId < Right.PredictionId;
+		});
+	}
+
 	OutStateBeforeRollBack = PredictedStateSnapshot;
 	const FCommonQTEStateSnapshot& RollBackBaseSnapshot = InitialStateSnapshot.WholeHandle.IsValid() ? InitialStateSnapshot : PredictedStateSnapshot;
 	PredictedStateSnapshot = FCommonQTEStateRuntime::ExpandCompactStateSnapshot(Message.AuthoritativeStateSnapshot, RollBackBaseSnapshot);
 	FCommonQTEStateRuntime::NormalizeStateSnapshot(PredictedStateSnapshot);
-	OutStateAfterRollBack = PredictedStateSnapshot;
 
-	for (int32 RecordIndex = PredictionRecords.Num() - 1; RecordIndex >= 0; --RecordIndex)
+	PredictionRecords.Reset();
+	LastAppliedRollBackPredictionId = Message.PredictionId > 0 ? FMath::Max(LastAppliedRollBackPredictionId, Message.PredictionId) : LastAppliedRollBackPredictionId;
+
+	int32 ReplayedPredictionCount = 0;
+	for (const FCommonQTEPerformerPredictionRecord& PendingPredictionRecord : PendingPredictionRecords)
 	{
-		if (PredictionRecords[RecordIndex].PredictionId >= Message.PredictionId)
+		FCommonQTEPerformerPredictionRecord ReplayedPredictionRecord;
+		if (ApplyPredictionMessage(PendingPredictionRecord.PredictionMessage, ReplayedPredictionRecord))
 		{
-			PredictionRecords.RemoveAt(RecordIndex, 1, EAllowShrinking::No);
+			PredictionRecords.Add(ReplayedPredictionRecord);
+			++ReplayedPredictionCount;
 		}
 	}
+	OutStateAfterRollBack = PredictedStateSnapshot;
 
-	UE_LOG(LogCommonQTE, Log, TEXT("Rollback applied locally. Handle=%d PredictionId=%d RejectedCellIndex=%d RemainingPredictionRecordCount=%d State=%s Performer=%s"), FCommonQTELog::HandleValue(PredictedStateSnapshot.WholeHandle), Message.PredictionId, Message.RejectedCellIndex, PredictionRecords.Num(), FCommonQTELog::StateToString(PredictedStateSnapshot.QTEState), *GetNameSafe(this));
+	UE_LOG(LogCommonQTE, Log, TEXT("Rollback applied locally. Handle=%d PredictionId=%d RejectedCellIndex=%d PendingReplayCount=%d ReplayedPredictionCount=%d RemainingPredictionRecordCount=%d State=%s Performer=%s"), FCommonQTELog::HandleValue(PredictedStateSnapshot.WholeHandle), Message.PredictionId, Message.RejectedCellIndex, PendingPredictionRecords.Num(), ReplayedPredictionCount, PredictionRecords.Num(), FCommonQTELog::StateToString(PredictedStateSnapshot.QTEState), *GetNameSafe(this));
 	return true;
+}
+
+void ACommonQTEPerformerActor::PrunePredictionRecordsUpTo(int32 PredictionId)
+{
+	if (PredictionId <= 0)
+	{
+		return;
+	}
+
+	const int32 OriginalRecordCount = PredictionRecords.Num();
+	PredictionRecords.RemoveAll([PredictionId](const FCommonQTEPerformerPredictionRecord& PredictionRecord)
+	{
+		return PredictionRecord.PredictionId <= PredictionId;
+	});
+
+	const int32 RemovedRecordCount = OriginalRecordCount - PredictionRecords.Num();
+	if (RemovedRecordCount > 0)
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("Prediction records pruned by ack. AckPredictionId=%d RemovedCount=%d RemainingCount=%d Performer=%s"), PredictionId, RemovedRecordCount, PredictionRecords.Num(), *GetNameSafe(this));
+	}
+	else
+	{
+		UE_LOG(LogCommonQTE, VeryVerbose, TEXT("Prediction ack had no matching records. AckPredictionId=%d RecordCount=%d Performer=%s"), PredictionId, PredictionRecords.Num(), *GetNameSafe(this));
+	}
 }
 
 bool ACommonQTEPerformerActor::ShouldRoutePresentationMessages() const

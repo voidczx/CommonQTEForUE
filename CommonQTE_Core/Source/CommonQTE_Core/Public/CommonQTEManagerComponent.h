@@ -108,7 +108,7 @@ private:
 	void HandlePerformerVerification(ACommonQTEPerformerActor* Performer, const FCommonQTEPerformerPredictionMessage& Message);
 	bool IsPerformerRegisteredForEntity(const TSharedPtr<FCommonQTEEntity>& Entity, ACommonQTEPerformerActor* Performer) const;
 	bool CanVerifyPredictionMessage(ACommonQTEPerformerActor* Performer, const FCommonQTEEntity& Entity, const FCommonQTEPerformerPredictionMessage& Message) const;
-	void MarkPredictionMessageVerified(ACommonQTEPerformerActor* Performer, int32 PredictionId);
+	void MarkPredictionMessageResolved(ACommonQTEPerformerActor* Performer, int32 PredictionId);
 	void EnqueueRollBackToPerformer(ACommonQTEPerformerActor* Performer, const FCommonQTEHandle& Handle, int32 PredictionId, int32 RejectedCellIndex, const FCommonQTEStateSnapshot& AuthoritativeStateSnapshot);
 	void UpdateInitialStateSnapshot(const FCommonQTEHandle& Handle);
 	void UpdateObserverExcludedPlayerControllers(const FCommonQTEHandle& Handle);
@@ -141,7 +141,7 @@ private:
 	FCommonQTEPresentationDrainConfig PresentationDrainConfig;
 	TArray<FCommonQTEPresentationMessage> PresentationMessageQueue;
 	int32 PresentationMessageQueueHead = 0;
-	TMap<TObjectKey<ACommonQTEPerformerActor>, int32> LastVerifiedPredictionIdMap;
+	TMap<TObjectKey<ACommonQTEPerformerActor>, int32> LastResolvedPredictionIdMap;
 	bool bVerificationDrainScheduled = false;
 	bool bPresentationDrainScheduled = false;
 	bool bPresentationQueueThresholdReported = false;

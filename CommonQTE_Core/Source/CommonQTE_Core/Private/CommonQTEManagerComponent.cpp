@@ -131,7 +131,7 @@ bool UCommonQTEManagerComponent::RemoveEntity(const FCommonQTEHandle& Handle)
 			TWeakObjectPtr<ACommonQTEPerformerActor> WeakPerformer;
 			WeakPerformer = Performer;
 			DirtyVerificationPerformers.Remove(WeakPerformer);
-			LastVerifiedPredictionIdMap.Remove(TObjectKey<ACommonQTEPerformerActor>(Performer));
+			LastResolvedPredictionIdMap.Remove(TObjectKey<ACommonQTEPerformerActor>(Performer));
 			Performer->Destroy();
 		}
 	}
@@ -399,7 +399,7 @@ void UCommonQTEManagerComponent::Reset()
 	FinalizedEntities.Reset();
 	ObserverSequenceIdMap.Reset();
 	DirtyVerificationPerformers.Reset();
-	LastVerifiedPredictionIdMap.Reset();
+	LastResolvedPredictionIdMap.Reset();
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(VerificationDrainTimerHandle);
@@ -467,7 +467,7 @@ ACommonQTEPerformerActor* UCommonQTEManagerComponent::AddPerformer(const FCommon
 	}
 
 	Entity->GetDriver().GetReplicationProxy().AddPerformer(Performer);
-	LastVerifiedPredictionIdMap.Add(TObjectKey<ACommonQTEPerformerActor>(Performer), 0);
+	LastResolvedPredictionIdMap.Add(TObjectKey<ACommonQTEPerformerActor>(Performer), 0);
 	FCommonQTEStateSnapshot StateSnapshot;
 	Entity->BuildStateSnapshot(StateSnapshot);
 	Performer->SetInitialStateSnapshot(StateSnapshot);
@@ -921,12 +921,12 @@ bool UCommonQTEManagerComponent::CanVerifyPredictionMessage(ACommonQTEPerformerA
 	return Message.CellIndex == Entity.GetDriver().GetCellIndex();
 }
 
-void UCommonQTEManagerComponent::MarkPredictionMessageVerified(ACommonQTEPerformerActor* Performer, int32 PredictionId)
+void UCommonQTEManagerComponent::MarkPredictionMessageResolved(ACommonQTEPerformerActor* Performer, int32 PredictionId)
 {
 	if (IsValid(Performer) && PredictionId > 0)
 	{
-		int32& LastVerifiedPredictionId = LastVerifiedPredictionIdMap.FindOrAdd(TObjectKey<ACommonQTEPerformerActor>(Performer));
-		LastVerifiedPredictionId = FMath::Max(LastVerifiedPredictionId, PredictionId);
+		int32& LastResolvedPredictionId = LastResolvedPredictionIdMap.FindOrAdd(TObjectKey<ACommonQTEPerformerActor>(Performer));
+		LastResolvedPredictionId = FMath::Max(LastResolvedPredictionId, PredictionId);
 	}
 }
 
@@ -974,10 +974,10 @@ void UCommonQTEManagerComponent::HandlePerformerVerification(ACommonQTEPerformer
 		return;
 	}
 
-	const int32* LastVerifiedPredictionId = LastVerifiedPredictionIdMap.Find(TObjectKey<ACommonQTEPerformerActor>(Performer));
-	if (LastVerifiedPredictionId != nullptr && Message.PredictionId <= *LastVerifiedPredictionId)
+	const int32* LastResolvedPredictionId = LastResolvedPredictionIdMap.Find(TObjectKey<ACommonQTEPerformerActor>(Performer));
+	if (LastResolvedPredictionId != nullptr && Message.PredictionId <= *LastResolvedPredictionId)
 	{
-		UE_LOG(LogCommonQTE, Verbose, TEXT("HandlePerformerVerification ignored stale prediction. Handle=%d PredictionId=%d LastVerifiedPredictionId=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, *LastVerifiedPredictionId, *GetNameSafe(Performer));
+		UE_LOG(LogCommonQTE, Verbose, TEXT("HandlePerformerVerification ignored stale prediction. Handle=%d PredictionId=%d LastResolvedPredictionId=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, *LastResolvedPredictionId, *GetNameSafe(Performer));
 		return;
 	}
 
@@ -985,13 +985,14 @@ void UCommonQTEManagerComponent::HandlePerformerVerification(ACommonQTEPerformer
 	{
 		FCommonQTEStateSnapshot AuthoritativeStateSnapshot;
 		Entity->BuildStateSnapshot(AuthoritativeStateSnapshot);
+		MarkPredictionMessageResolved(Performer, Message.PredictionId);
 		EnqueueRollBackToPerformer(Performer, Message.WholeHandle, Message.PredictionId, Message.CellIndex, AuthoritativeStateSnapshot);
 		UE_LOG(LogCommonQTE, Warning, TEXT("HandlePerformerVerification rejected prediction before applying input. Handle=%d PredictionId=%d MessageCellIndex=%d AuthorityCellIndex=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, Message.CellIndex, Entity->GetDriver().GetCellIndex(), *GetNameSafe(Performer));
 		return;
 	}
 
 	const FCommonQTEApplyInputResult ApplyResult = Entity->HandleInputWithResult(Message.CellContent);
-	MarkPredictionMessageVerified(Performer, Message.PredictionId);
+	MarkPredictionMessageResolved(Performer, Message.PredictionId);
 	UE_LOG(
 		LogCommonQTE,
 		Log,
@@ -1028,6 +1029,10 @@ void UCommonQTEManagerComponent::HandlePerformerVerification(ACommonQTEPerformer
 		FCommonQTEStateSnapshot AuthoritativeStateSnapshot;
 		Entity->BuildStateSnapshot(AuthoritativeStateSnapshot);
 		EnqueueRollBackToPerformer(Performer, Message.WholeHandle, Message.PredictionId, ApplyResult.AppliedCellIndex != INDEX_NONE ? ApplyResult.AppliedCellIndex : Message.CellIndex, AuthoritativeStateSnapshot);
+	}
+	else if (Performer != nullptr)
+	{
+		Performer->AcknowledgePredictionMessage(Message.PredictionId);
 	}
 
 	if (IsTerminalState(Entity->GetState()))

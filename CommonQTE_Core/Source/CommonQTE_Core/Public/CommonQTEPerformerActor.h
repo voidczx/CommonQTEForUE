@@ -36,6 +36,7 @@ public:
 	virtual void EnqueueRollBackMessage(const FCommonQTEPerformerRollBackMessage& Message);
 	virtual void FlushPredictionMessagesToServer();
 	virtual void FlushRollBackMessagesToClient();
+	virtual void AcknowledgePredictionMessage(int32 PredictionId);
 
 	virtual TArray<FCommonQTEPerformerPredictionMessage> ConsumeLocalPredictionMessages();
 	virtual TArray<FCommonQTEPerformerPredictionMessage> ConsumePendingVerificationMessages();
@@ -49,6 +50,9 @@ protected:
 
 	UFUNCTION(Client, Reliable)
 	void SendRollBackMessagesToClient(const TArray<FCommonQTEPerformerRollBackMessage>& Messages);
+
+	UFUNCTION(Client, Reliable)
+	void SendPredictionAckToClient(int32 PredictionId);
 
 	UFUNCTION()
 	virtual void OnRep_InitialStateSnapshot();
@@ -67,6 +71,7 @@ protected:
 	virtual FCommonQTEPerformerPredictionMessage NormalizePredictionMessage(const FCommonQTEPerformerPredictionMessage& Message);
 	virtual bool ApplyPredictionMessage(const FCommonQTEPerformerPredictionMessage& Message, FCommonQTEPerformerPredictionRecord& OutRecord);
 	virtual bool ApplyRollBackMessage(const FCommonQTEPerformerRollBackMessage& Message, FCommonQTEStateSnapshot& OutStateBeforeRollBack, FCommonQTEStateSnapshot& OutStateAfterRollBack);
+	virtual void PrunePredictionRecordsUpTo(int32 PredictionId);
 	virtual bool ShouldRoutePresentationMessages() const;
 	virtual class UCommonQTEManagerComponent* FindManager() const;
 
@@ -82,6 +87,7 @@ protected:
 	TArray<FCommonQTEPerformerRollBackMessage> RollBackMessageQueue;
 	FTimerHandle LocalPredictionDrainTimerHandle;
 	FTimerHandle RollBackDrainTimerHandle;
+	int32 LastAppliedRollBackPredictionId = 0;
 	bool bLocalPredictionDrainScheduled = false;
 	bool bRollBackDrainScheduled = false;
 	bool bHasInitialStateSnapshot = false;
