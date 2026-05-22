@@ -44,30 +44,30 @@ void FCommonQTEPresentationBuilder::BuildApplyInputResultMessages(const FCommonQ
 	BuildSnapshotDiffMessages(ApplyResult.StateBeforeInput, ApplyResult.StateAfterInput, Source, Phase, PredictionId, OutMessages);
 }
 
-void FCommonQTEPresentationBuilder::BuildSnapshotDiffMessages(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, TArray<FCommonQTEPresentationMessage>& OutMessages)
+void FCommonQTEPresentationBuilder::BuildSnapshotDiffMessages(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, TArray<FCommonQTEPresentationMessage>& OutMessages, int32 AppliedCellIndexOverride)
 {
 	const int32 CellContentCount = FMath::Max(BeforeSnapshot.CellContents.Num(), AfterSnapshot.CellContents.Num());
 	const int32 CellStateCount = FMath::Max(BeforeSnapshot.CellStates.Num(), AfterSnapshot.CellStates.Num());
 	const int32 CellCount = FMath::Max(CellContentCount, CellStateCount);
 	const int32 InitialMessageCount = OutMessages.Num();
-	const int32 AppliedCellIndex = BeforeSnapshot.DriverState.CellIndex;
+	const int32 AppliedCellIndex = AppliedCellIndexOverride != INDEX_NONE ? AppliedCellIndexOverride : BeforeSnapshot.DriverState.CellIndex;
 	bool bHasAppliedCellMessage = false;
 	bool bHasTerminalAppliedCellMessage = false;
 	for (int32 CellIndex = 0; CellIndex < CellCount; ++CellIndex)
 	{
 		if (IsCellChanged(BeforeSnapshot, AfterSnapshot, CellIndex))
 		{
-			FCommonQTEPresentationMessage Message = BuildSnapshotCellMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId, CellIndex);
+			FCommonQTEPresentationMessage Message = BuildSnapshotCellMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId, CellIndex, AppliedCellIndex);
 			OutMessages.Add(Message);
 			bHasAppliedCellMessage = bHasAppliedCellMessage || CellIndex == AppliedCellIndex;
-			bHasTerminalAppliedCellMessage = bHasTerminalAppliedCellMessage || IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, Message.CellState);
+			bHasTerminalAppliedCellMessage = bHasTerminalAppliedCellMessage || IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, AppliedCellIndex, Message.CellState);
 		}
 	}
 
 	const bool bErrorCountIncreased = IsErrorCountIncreased(BeforeSnapshot, AfterSnapshot);
 	if (bErrorCountIncreased && !bHasAppliedCellMessage)
 	{
-		OutMessages.Add(BuildSnapshotErrorInputMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId));
+		OutMessages.Add(BuildSnapshotErrorInputMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId, AppliedCellIndex));
 	}
 
 	const bool bStateChanged = BeforeSnapshot.QTEState != AfterSnapshot.QTEState;
@@ -114,15 +114,15 @@ bool FCommonQTEPresentationBuilder::IsTerminalQTEState(ECommonQTEState State)
 	return State == ECommonQTEState::Success || State == ECommonQTEState::Fail;
 }
 
-bool FCommonQTEPresentationBuilder::IsTerminalAppliedCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, int32 CellIndex, ECommonQTECellState CellState)
+bool FCommonQTEPresentationBuilder::IsTerminalAppliedCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, int32 CellIndex, int32 AppliedCellIndex, ECommonQTECellState CellState)
 {
 	return BeforeSnapshot.QTEState != AfterSnapshot.QTEState
 		&& IsTerminalQTEState(AfterSnapshot.QTEState)
-		&& CellIndex == BeforeSnapshot.DriverState.CellIndex
+		&& CellIndex == AppliedCellIndex
 		&& (CellState == ECommonQTECellState::Success || CellState == ECommonQTECellState::Fail);
 }
 
-FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, int32 CellIndex)
+FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, int32 CellIndex, int32 AppliedCellIndex)
 {
 	FCommonQTEPresentationMessage Message;
 	Message.WholeHandle = AfterSnapshot.WholeHandle.IsValid() ? AfterSnapshot.WholeHandle : BeforeSnapshot.WholeHandle;
@@ -132,13 +132,12 @@ FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotCellMe
 	Message.CellIndex = CellIndex;
 	Message.CellContent = AfterSnapshot.CellContents.IsValidIndex(CellIndex) ? AfterSnapshot.CellContents[CellIndex] : 0;
 	Message.CellState = AfterSnapshot.CellStates.IsValidIndex(CellIndex) ? AfterSnapshot.CellStates[CellIndex] : ECommonQTECellState::OnGoing;
-	Message.QTEState = IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, Message.CellState) ? BeforeSnapshot.QTEState : AfterSnapshot.QTEState;
+	Message.QTEState = IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, AppliedCellIndex, Message.CellState) ? BeforeSnapshot.QTEState : AfterSnapshot.QTEState;
 	return Message;
 }
 
-FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotErrorInputMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId)
+FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotErrorInputMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, int32 CellIndex)
 {
-	const int32 CellIndex = BeforeSnapshot.DriverState.CellIndex;
 	FCommonQTEPresentationMessage Message;
 	Message.WholeHandle = AfterSnapshot.WholeHandle.IsValid() ? AfterSnapshot.WholeHandle : BeforeSnapshot.WholeHandle;
 	Message.Source = Source;

@@ -424,7 +424,7 @@ void ACommonQTEPerformerActor::RouteRollBackPresentationMessages(const FCommonQT
 	}
 
 	TArray<FCommonQTEPresentationMessage> Messages;
-	FCommonQTEPresentationBuilder::BuildSnapshotDiffMessages(StateBeforeRollBack, StateAfterRollBack, ECommonQTEPresentationSource::Performer, ECommonQTEPresentationPhase::Rollback, Message.PredictionId, Messages);
+	FCommonQTEPresentationBuilder::BuildSnapshotDiffMessages(StateBeforeRollBack, StateAfterRollBack, ECommonQTEPresentationSource::Performer, ECommonQTEPresentationPhase::Rollback, Message.PredictionId, Messages, Message.RejectedCellIndex);
 	Manager->EnqueuePresentationMessages(Messages);
 	UE_LOG(LogCommonQTE, Log, TEXT("Rollback presentation messages routed. Handle=%d PredictionId=%d MessageCount=%d Performer=%s"), FCommonQTELog::HandleValue(Message.WholeHandle), Message.PredictionId, Messages.Num(), *GetNameSafe(this));
 }
