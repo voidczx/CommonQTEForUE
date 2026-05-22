@@ -62,7 +62,8 @@ public:
 	ECommonQTECellState GetCellState(const FCommonQTEHandle& Handle, int32 CellIndex) const;
 	bool GetEntityStateSnapshot(const FCommonQTEHandle& Handle, FCommonQTEStateSnapshot& OutSnapshot) const;
 
-	UFUNCTION(BlueprintCallable, Category = "CommonQTE")
+	// Entity-specific cleanup delay must be configured before FinalizeEntity schedules cleanup.
+	UFUNCTION(BlueprintCallable, Category = "CommonQTE", meta = (ToolTip = "Configure before FinalizeEntity schedules cleanup. Calls after finalization are rejected."))
 	void SetEntityFinishedCleanupDelay(FCommonQTEHandle Handle, float CleanupDelay);
 
 	UFUNCTION(BlueprintPure, Category = "CommonQTE")

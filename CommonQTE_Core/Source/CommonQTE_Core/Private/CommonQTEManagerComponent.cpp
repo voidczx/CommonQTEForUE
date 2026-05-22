@@ -555,9 +555,21 @@ bool UCommonQTEManagerComponent::GetEntityStateSnapshot(const FCommonQTEHandle& 
 
 void UCommonQTEManagerComponent::SetEntityFinishedCleanupDelay(FCommonQTEHandle Handle, float CleanupDelay)
 {
-	if (!Handle.IsValid() || !FindEntity(Handle).IsValid())
+	TSharedPtr<FCommonQTEEntity> Entity;
+	if (Handle.IsValid())
+	{
+		Entity = FindEntity(Handle);
+	}
+
+	if (!Entity.IsValid())
 	{
 		UE_LOG(LogCommonQTE, Warning, TEXT("SetEntityFinishedCleanupDelay rejected because entity is missing. Handle=%d CleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), CleanupDelay);
+		return;
+	}
+
+	if (FinalizedEntities.Contains(Handle))
+	{
+		UE_LOG(LogCommonQTE, Warning, TEXT("SetEntityFinishedCleanupDelay rejected because cleanup delay must be configured before entity finalization. Handle=%d CleanupDelay=%.3f CurrentCleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), CleanupDelay, ResolveEntityFinishedCleanupDelay(Handle));
 		return;
 	}
 
