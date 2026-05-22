@@ -112,6 +112,7 @@ bool UCommonQTEManagerComponent::RemoveEntity(const FCommonQTEHandle& Handle)
 		ClearCleanupTimer(Handle);
 		FinalizedEntities.Remove(Handle);
 		EntityActorClassConfigMap.Remove(Handle);
+		EntityFinishedCleanupDelays.Remove(Handle);
 		ObserverSequenceIdMap.Remove(Handle);
 		UE_LOG(LogCommonQTE, Warning, TEXT("RemoveEntity failed because entity is missing. Handle=%d"), FCommonQTELog::HandleValue(Handle));
 		return false;
@@ -145,6 +146,7 @@ bool UCommonQTEManagerComponent::RemoveEntity(const FCommonQTEHandle& Handle)
 	Entity->GetDriver().GetReplicationProxy().ResetObserver();
 	FinalizedEntities.Remove(Handle);
 	EntityActorClassConfigMap.Remove(Handle);
+	EntityFinishedCleanupDelays.Remove(Handle);
 	ObserverSequenceIdMap.Remove(Handle);
 	EntityMap.Remove(Handle);
 	UE_LOG(LogCommonQTE, Log, TEXT("RemoveEntity completed. Handle=%d"), FCommonQTELog::HandleValue(Handle));
@@ -395,6 +397,7 @@ void UCommonQTEManagerComponent::Reset()
 	EntityMap.Reset();
 	EntityTimers.Reset();
 	EntityCleanupTimers.Reset();
+	EntityFinishedCleanupDelays.Reset();
 	EntityActorClassConfigMap.Reset();
 	FinalizedEntities.Reset();
 	ObserverSequenceIdMap.Reset();
@@ -548,6 +551,25 @@ bool UCommonQTEManagerComponent::GetEntityStateSnapshot(const FCommonQTEHandle& 
 
 	Entity->BuildStateSnapshot(OutSnapshot);
 	return true;
+}
+
+void UCommonQTEManagerComponent::SetEntityFinishedCleanupDelay(FCommonQTEHandle Handle, float CleanupDelay)
+{
+	if (!Handle.IsValid() || !FindEntity(Handle).IsValid())
+	{
+		UE_LOG(LogCommonQTE, Warning, TEXT("SetEntityFinishedCleanupDelay rejected because entity is missing. Handle=%d CleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), CleanupDelay);
+		return;
+	}
+
+	const float DefaultCleanupDelay = FMath::Max(FinishedEntityCleanupDelay, 0.0f);
+	const float EntityCleanupDelay = FMath::Max(DefaultCleanupDelay, CleanupDelay);
+	EntityFinishedCleanupDelays.Add(Handle, EntityCleanupDelay);
+	UE_LOG(LogCommonQTE, Verbose, TEXT("Entity finished cleanup delay set. Handle=%d CleanupDelay=%.3f DefaultCleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), EntityCleanupDelay, DefaultCleanupDelay);
+}
+
+float UCommonQTEManagerComponent::GetEntityFinishedCleanupDelay(FCommonQTEHandle Handle) const
+{
+	return ResolveEntityFinishedCleanupDelay(Handle);
 }
 
 void UCommonQTEManagerComponent::RequestVerificationDrain(ACommonQTEPerformerActor* Performer)
@@ -1172,7 +1194,7 @@ void UCommonQTEManagerComponent::FinalizeEntity(const FCommonQTEHandle& Handle)
 	UE_LOG(LogCommonQTE, Log, TEXT("Entity finalized. Handle=%d State=%s"), FCommonQTELog::HandleValue(Handle), FCommonQTELog::StateToString(Entity->GetState()));
 	OnEntityFinalized.Broadcast(Handle, Entity->GetState());
 
-	const float CleanupDelay = FMath::Max(FinishedEntityCleanupDelay, 0.0f);
+	const float CleanupDelay = ResolveEntityFinishedCleanupDelay(Handle);
 	for (ACommonQTEPerformerActor* Performer : Entity->GetDriver().GetReplicationProxy().GetValidPerformers())
 	{
 		if (IsValid(Performer))
@@ -1193,7 +1215,8 @@ void UCommonQTEManagerComponent::ScheduleEntityCleanup(const FCommonQTEHandle& H
 {
 	ClearCleanupTimer(Handle);
 
-	if (FinishedEntityCleanupDelay <= 0.0f)
+	const float CleanupDelay = ResolveEntityFinishedCleanupDelay(Handle);
+	if (CleanupDelay <= 0.0f)
 	{
 		UE_LOG(LogCommonQTE, Log, TEXT("Entity cleanup executes immediately. Handle=%d"), FCommonQTELog::HandleValue(Handle));
 		RemoveEntity(Handle);
@@ -1204,8 +1227,8 @@ void UCommonQTEManagerComponent::ScheduleEntityCleanup(const FCommonQTEHandle& H
 	{
 		FTimerDelegate TimerDelegate;
 		TimerDelegate.BindUObject(this, &UCommonQTEManagerComponent::HandleCleanupTimerExpired, Handle);
-		World->GetTimerManager().SetTimer(EntityCleanupTimers.FindOrAdd(Handle), TimerDelegate, FinishedEntityCleanupDelay, false);
-		UE_LOG(LogCommonQTE, Log, TEXT("Entity cleanup scheduled. Handle=%d CleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), FinishedEntityCleanupDelay);
+		World->GetTimerManager().SetTimer(EntityCleanupTimers.FindOrAdd(Handle), TimerDelegate, CleanupDelay, false);
+		UE_LOG(LogCommonQTE, Log, TEXT("Entity cleanup scheduled. Handle=%d CleanupDelay=%.3f"), FCommonQTELog::HandleValue(Handle), CleanupDelay);
 	}
 }
 
@@ -1289,6 +1312,15 @@ void UCommonQTEManagerComponent::CheckPresentationMessageQueueThreshold(const TC
 	const TCHAR* SafeContext = Context != nullptr ? Context : TEXT("Unknown");
 	ensureAlwaysMsgf(false, TEXT("CommonQTE presentation message queue exceeded warning threshold. Context=%s QueueCount=%d Threshold=%d"), SafeContext, QueueCount, Threshold);
 	UE_LOG(LogCommonQTE, Error, TEXT("Presentation message queue exceeded warning threshold. Context=%s QueueCount=%d Threshold=%d"), SafeContext, QueueCount, Threshold);
+}
+
+float UCommonQTEManagerComponent::ResolveEntityFinishedCleanupDelay(const FCommonQTEHandle& Handle) const
+{
+	if (const float* EntityCleanupDelay = EntityFinishedCleanupDelays.Find(Handle))
+	{
+		return FMath::Max(*EntityCleanupDelay, 0.0f);
+	}
+	return FMath::Max(FinishedEntityCleanupDelay, 0.0f);
 }
 
 APlayerController* UCommonQTEManagerComponent::ResolvePlayerController(AActor* PerformerOwner) const

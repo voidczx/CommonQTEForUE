@@ -55,7 +55,7 @@ void ACommonQTEObserverActor::SetInitialStateSnapshot(const FCommonQTEStateSnaps
 	{
 		BuildPresentationMessagesFromInitialState();
 	}
-	ReceiveCommonQTEPresentationStateChanged();
+	NotifyCommonQTEPresentationStateChangedIfReady();
 }
 
 const FCommonQTEStateSnapshot& ACommonQTEObserverActor::GetInitialStateSnapshot() const
@@ -74,7 +74,7 @@ FCommonQTEHandle ACommonQTEObserverActor::GetCommonQTEHandle() const
 
 bool ACommonQTEObserverActor::HasCommonQTEPresentationStateSnapshot() const
 {
-	return InitialStateSnapshot.WholeHandle.IsValid() || ReplicatedState.StateSnapshot.WholeHandle.IsValid();
+	return InitialStateSnapshot.WholeHandle.IsValid();
 }
 
 FCommonQTEStateSnapshot ACommonQTEObserverActor::GetCommonQTEPresentationStateSnapshot() const
@@ -159,14 +159,14 @@ void ACommonQTEObserverActor::OnRep_InitialState()
 	bHasLastObservedStateSnapshot = InitialStateSnapshot.WholeHandle.IsValid();
 	BuildPresentationMessagesFromInitialState();
 	BuildPresentationMessagesFromReplicatedState();
-	ReceiveCommonQTEPresentationStateChanged();
+	NotifyCommonQTEPresentationStateChangedIfReady();
 }
 
 void ACommonQTEObserverActor::OnRep_ReplicatedState()
 {
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Observer replicated state received. Handle=%d SequenceId=%d LastConsumedSequenceId=%d Observer=%s"), FCommonQTELog::HandleValue(ReplicatedState.StateSnapshot.WholeHandle), ReplicatedState.SequenceId, LastConsumedSequenceId, *GetNameSafe(this));
 	BuildPresentationMessagesFromReplicatedState();
-	ReceiveCommonQTEPresentationStateChanged();
+	NotifyCommonQTEPresentationStateChangedIfReady();
 }
 
 void ACommonQTEObserverActor::BuildPresentationMessagesFromInitialState()
@@ -242,6 +242,17 @@ void ACommonQTEObserverActor::BuildPresentationMessagesFromReplicatedState()
 	{
 		UE_LOG(LogCommonQTE, Warning, TEXT("Observer failed to route replicated state messages because manager is missing. Handle=%d SequenceId=%d Observer=%s"), FCommonQTELog::HandleValue(ReplicatedState.StateSnapshot.WholeHandle), ReplicatedState.SequenceId, *GetNameSafe(this));
 	}
+}
+
+void ACommonQTEObserverActor::NotifyCommonQTEPresentationStateChangedIfReady()
+{
+	if (!HasCommonQTEPresentationStateSnapshot())
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("Observer presentation state changed notification delayed because initial state is missing. ReplicatedHandle=%d SequenceId=%d Observer=%s"), FCommonQTELog::HandleValue(ReplicatedState.StateSnapshot.WholeHandle), ReplicatedState.SequenceId, *GetNameSafe(this));
+		return;
+	}
+
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 bool ACommonQTEObserverActor::ShouldRoutePresentationMessages() const

@@ -54,6 +54,7 @@ protected:
 	virtual void BuildPresentationMessagesFromInitialState();
 	virtual void BuildPresentationMessageFromStateDelta(const FCommonQTEObserverStateDelta& InStateDelta);
 	virtual void BuildPresentationMessagesFromReplicatedState();
+	virtual void NotifyCommonQTEPresentationStateChangedIfReady();
 	virtual bool ShouldRoutePresentationMessages() const;
 	virtual UCommonQTEManagerComponent* FindManager() const;
 

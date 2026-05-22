@@ -62,6 +62,12 @@ public:
 	ECommonQTECellState GetCellState(const FCommonQTEHandle& Handle, int32 CellIndex) const;
 	bool GetEntityStateSnapshot(const FCommonQTEHandle& Handle, FCommonQTEStateSnapshot& OutSnapshot) const;
 
+	UFUNCTION(BlueprintCallable, Category = "CommonQTE")
+	void SetEntityFinishedCleanupDelay(FCommonQTEHandle Handle, float CleanupDelay);
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	float GetEntityFinishedCleanupDelay(FCommonQTEHandle Handle) const;
+
 	void RequestVerificationDrain(ACommonQTEPerformerActor* Performer);
 
 	UFUNCTION(BlueprintCallable, Category = "CommonQTE")
@@ -128,6 +134,7 @@ private:
 	int32 AllocateObserverSequenceId(const FCommonQTEHandle& Handle);
 	APlayerController* ResolvePlayerController(AActor* PerformerOwner) const;
 	void CheckPresentationMessageQueueThreshold(const TCHAR* Context);
+	float ResolveEntityFinishedCleanupDelay(const FCommonQTEHandle& Handle) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "CommonQTE")
 	float FinishedEntityCleanupDelay = 2.0f;
@@ -135,6 +142,7 @@ private:
 	TMap<FCommonQTEHandle, TSharedPtr<FCommonQTEEntity>> EntityMap;
 	TMap<FCommonQTEHandle, FTimerHandle> EntityTimers;
 	TMap<FCommonQTEHandle, FTimerHandle> EntityCleanupTimers;
+	TMap<FCommonQTEHandle, float> EntityFinishedCleanupDelays;
 	UPROPERTY(Transient)
 	TMap<FCommonQTEHandle, FCommonQTEActorClassConfig> EntityActorClassConfigMap;
 	TSet<FCommonQTEHandle> FinalizedEntities;
