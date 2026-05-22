@@ -50,15 +50,30 @@ void FCommonQTEPresentationBuilder::BuildSnapshotDiffMessages(const FCommonQTESt
 	const int32 CellStateCount = FMath::Max(BeforeSnapshot.CellStates.Num(), AfterSnapshot.CellStates.Num());
 	const int32 CellCount = FMath::Max(CellContentCount, CellStateCount);
 	const int32 InitialMessageCount = OutMessages.Num();
+	const int32 AppliedCellIndex = BeforeSnapshot.DriverState.CellIndex;
+	bool bHasAppliedCellMessage = false;
+	bool bHasTerminalAppliedCellMessage = false;
 	for (int32 CellIndex = 0; CellIndex < CellCount; ++CellIndex)
 	{
 		if (IsCellChanged(BeforeSnapshot, AfterSnapshot, CellIndex))
 		{
-			OutMessages.Add(BuildSnapshotCellMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId, CellIndex));
+			FCommonQTEPresentationMessage Message = BuildSnapshotCellMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId, CellIndex);
+			OutMessages.Add(Message);
+			bHasAppliedCellMessage = bHasAppliedCellMessage || CellIndex == AppliedCellIndex;
+			bHasTerminalAppliedCellMessage = bHasTerminalAppliedCellMessage || IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, Message.CellState);
 		}
 	}
 
-	if (OutMessages.Num() == InitialMessageCount && BeforeSnapshot.QTEState != AfterSnapshot.QTEState)
+	const bool bErrorCountIncreased = IsErrorCountIncreased(BeforeSnapshot, AfterSnapshot);
+	if (bErrorCountIncreased && !bHasAppliedCellMessage)
+	{
+		OutMessages.Add(BuildSnapshotErrorInputMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId));
+	}
+
+	const bool bStateChanged = BeforeSnapshot.QTEState != AfterSnapshot.QTEState;
+	const bool bTerminalStateChanged = bStateChanged && IsTerminalQTEState(AfterSnapshot.QTEState);
+	const bool bTerminalInputStateChanged = bTerminalStateChanged && (bHasTerminalAppliedCellMessage || bErrorCountIncreased);
+	if ((OutMessages.Num() == InitialMessageCount && bStateChanged) || bTerminalInputStateChanged)
 	{
 		OutMessages.Add(BuildSnapshotStateMessage(BeforeSnapshot, AfterSnapshot, Source, Phase, PredictionId));
 	}
@@ -89,6 +104,24 @@ bool FCommonQTEPresentationBuilder::IsCellChanged(const FCommonQTEStateSnapshot&
 	return bBeforeStateValid && BeforeSnapshot.CellStates[CellIndex] != AfterSnapshot.CellStates[CellIndex];
 }
 
+bool FCommonQTEPresentationBuilder::IsErrorCountIncreased(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot)
+{
+	return AfterSnapshot.DriverState.ErrorCount > BeforeSnapshot.DriverState.ErrorCount;
+}
+
+bool FCommonQTEPresentationBuilder::IsTerminalQTEState(ECommonQTEState State)
+{
+	return State == ECommonQTEState::Success || State == ECommonQTEState::Fail;
+}
+
+bool FCommonQTEPresentationBuilder::IsTerminalAppliedCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, int32 CellIndex, ECommonQTECellState CellState)
+{
+	return BeforeSnapshot.QTEState != AfterSnapshot.QTEState
+		&& IsTerminalQTEState(AfterSnapshot.QTEState)
+		&& CellIndex == BeforeSnapshot.DriverState.CellIndex
+		&& (CellState == ECommonQTECellState::Success || CellState == ECommonQTECellState::Fail);
+}
+
 FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotCellMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId, int32 CellIndex)
 {
 	FCommonQTEPresentationMessage Message;
@@ -98,8 +131,24 @@ FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotCellMe
 	Message.PredictionId = PredictionId;
 	Message.CellIndex = CellIndex;
 	Message.CellContent = AfterSnapshot.CellContents.IsValidIndex(CellIndex) ? AfterSnapshot.CellContents[CellIndex] : 0;
-	Message.QTEState = AfterSnapshot.QTEState;
 	Message.CellState = AfterSnapshot.CellStates.IsValidIndex(CellIndex) ? AfterSnapshot.CellStates[CellIndex] : ECommonQTECellState::OnGoing;
+	Message.QTEState = IsTerminalAppliedCellMessage(BeforeSnapshot, AfterSnapshot, CellIndex, Message.CellState) ? BeforeSnapshot.QTEState : AfterSnapshot.QTEState;
+	return Message;
+}
+
+FCommonQTEPresentationMessage FCommonQTEPresentationBuilder::BuildSnapshotErrorInputMessage(const FCommonQTEStateSnapshot& BeforeSnapshot, const FCommonQTEStateSnapshot& AfterSnapshot, ECommonQTEPresentationSource Source, ECommonQTEPresentationPhase Phase, int32 PredictionId)
+{
+	const int32 CellIndex = BeforeSnapshot.DriverState.CellIndex;
+	FCommonQTEPresentationMessage Message;
+	Message.WholeHandle = AfterSnapshot.WholeHandle.IsValid() ? AfterSnapshot.WholeHandle : BeforeSnapshot.WholeHandle;
+	Message.Source = Source;
+	Message.Phase = Phase;
+	Message.PredictionId = PredictionId;
+	Message.CellIndex = CellIndex;
+	Message.CellContent = AfterSnapshot.CellContents.IsValidIndex(CellIndex) ? AfterSnapshot.CellContents[CellIndex] : 0;
+	Message.CellState = ECommonQTECellState::Fail;
+	const bool bTerminalErrorStateChanged = BeforeSnapshot.QTEState != AfterSnapshot.QTEState && AfterSnapshot.QTEState == ECommonQTEState::Fail;
+	Message.QTEState = bTerminalErrorStateChanged ? BeforeSnapshot.QTEState : AfterSnapshot.QTEState;
 	return Message;
 }
 
