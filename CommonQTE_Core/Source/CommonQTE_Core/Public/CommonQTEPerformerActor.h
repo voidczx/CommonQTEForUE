@@ -32,6 +32,19 @@ public:
 	virtual void SetInitialStateSnapshot(const FCommonQTEStateSnapshot& InInitialStateSnapshot);
 	const FCommonQTEStateSnapshot& GetInitialStateSnapshot() const;
 	const FCommonQTEStateSnapshot& GetPredictedStateSnapshot() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	FCommonQTEHandle GetCommonQTEHandle() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	bool HasCommonQTEPresentationStateSnapshot() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	FCommonQTEStateSnapshot GetCommonQTEPresentationStateSnapshot() const;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "CommonQTE")
+	void ReceiveCommonQTEPresentationStateChanged();
+
 	virtual void EnqueuePredictionMessage(const FCommonQTEPerformerPredictionMessage& Message);
 	virtual void EnqueueRollBackMessage(const FCommonQTEPerformerRollBackMessage& Message);
 	virtual void FlushPredictionMessagesToServer();

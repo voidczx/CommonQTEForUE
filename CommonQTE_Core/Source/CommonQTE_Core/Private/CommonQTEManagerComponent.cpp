@@ -1170,6 +1170,7 @@ void UCommonQTEManagerComponent::FinalizeEntity(const FCommonQTEHandle& Handle)
 	ClearLimitTimer(Handle);
 	SyncPerformersToAuthoritativeState(Handle, 0, INDEX_NONE);
 	UE_LOG(LogCommonQTE, Log, TEXT("Entity finalized. Handle=%d State=%s"), FCommonQTELog::HandleValue(Handle), FCommonQTELog::StateToString(Entity->GetState()));
+	OnEntityFinalized.Broadcast(Handle, Entity->GetState());
 
 	const float CleanupDelay = FMath::Max(FinishedEntityCleanupDelay, 0.0f);
 	for (ACommonQTEPerformerActor* Performer : Entity->GetDriver().GetReplicationProxy().GetValidPerformers())

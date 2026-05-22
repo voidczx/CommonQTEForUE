@@ -18,6 +18,7 @@ class ACommonQTEPerformerActor;
 class APlayerController;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCommonQTEPerformerVerificationApplied, ACommonQTEPerformerActor*, Performer, const FCommonQTEPerformerPredictionMessage&, Message, const FCommonQTEApplyInputResult&, ApplyResult);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCommonQTEEntityFinalized, FCommonQTEHandle, Handle, ECommonQTEState, State);
 
 UCLASS(BlueprintType, Blueprintable)
 class COMMONQTE_CORE_API UCommonQTEManagerComponent : public UGameStateComponent
@@ -34,6 +35,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "CommonQTE")
 	FCommonQTEPerformerVerificationApplied OnPerformerVerificationApplied;
+
+	UPROPERTY(BlueprintAssignable, Category = "CommonQTE")
+	FCommonQTEEntityFinalized OnEntityFinalized;
 
 	FCommonQTEHandle CreateEntity();
 	FCommonQTEHandle CreateEntity(const FCommonQTERule& Rule, const FCommonQTECellGenerateConfig& GenerateConfig);

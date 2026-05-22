@@ -22,6 +22,19 @@ public:
 
 	virtual void SetInitialStateSnapshot(const FCommonQTEStateSnapshot& InInitialStateSnapshot);
 	const FCommonQTEStateSnapshot& GetInitialStateSnapshot() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	FCommonQTEHandle GetCommonQTEHandle() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	bool HasCommonQTEPresentationStateSnapshot() const;
+
+	UFUNCTION(BlueprintPure, Category = "CommonQTE")
+	FCommonQTEStateSnapshot GetCommonQTEPresentationStateSnapshot() const;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "CommonQTE")
+	void ReceiveCommonQTEPresentationStateChanged();
+
 	virtual void SetExcludedPlayerControllers(const TArray<APlayerController*>& InPlayerControllers);
 	virtual void AddExcludedPlayerController(APlayerController* PlayerController);
 

@@ -55,10 +55,36 @@ void ACommonQTEObserverActor::SetInitialStateSnapshot(const FCommonQTEStateSnaps
 	{
 		BuildPresentationMessagesFromInitialState();
 	}
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 const FCommonQTEStateSnapshot& ACommonQTEObserverActor::GetInitialStateSnapshot() const
 {
+	return InitialStateSnapshot;
+}
+
+FCommonQTEHandle ACommonQTEObserverActor::GetCommonQTEHandle() const
+{
+	if (ReplicatedState.StateSnapshot.WholeHandle.IsValid())
+	{
+		return ReplicatedState.StateSnapshot.WholeHandle;
+	}
+	return InitialStateSnapshot.WholeHandle;
+}
+
+bool ACommonQTEObserverActor::HasCommonQTEPresentationStateSnapshot() const
+{
+	return InitialStateSnapshot.WholeHandle.IsValid() || ReplicatedState.StateSnapshot.WholeHandle.IsValid();
+}
+
+FCommonQTEStateSnapshot ACommonQTEObserverActor::GetCommonQTEPresentationStateSnapshot() const
+{
+	if (InitialStateSnapshot.WholeHandle.IsValid() && ReplicatedState.StateSnapshot.WholeHandle.IsValid())
+	{
+		FCommonQTEStateSnapshot StateSnapshot = FCommonQTEStateRuntime::ExpandCompactStateSnapshot(ReplicatedState.StateSnapshot, InitialStateSnapshot);
+		FCommonQTEStateRuntime::NormalizeStateSnapshot(StateSnapshot);
+		return StateSnapshot;
+	}
 	return InitialStateSnapshot;
 }
 
@@ -133,12 +159,14 @@ void ACommonQTEObserverActor::OnRep_InitialState()
 	bHasLastObservedStateSnapshot = InitialStateSnapshot.WholeHandle.IsValid();
 	BuildPresentationMessagesFromInitialState();
 	BuildPresentationMessagesFromReplicatedState();
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 void ACommonQTEObserverActor::OnRep_ReplicatedState()
 {
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Observer replicated state received. Handle=%d SequenceId=%d LastConsumedSequenceId=%d Observer=%s"), FCommonQTELog::HandleValue(ReplicatedState.StateSnapshot.WholeHandle), ReplicatedState.SequenceId, LastConsumedSequenceId, *GetNameSafe(this));
 	BuildPresentationMessagesFromReplicatedState();
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 void ACommonQTEObserverActor::BuildPresentationMessagesFromInitialState()

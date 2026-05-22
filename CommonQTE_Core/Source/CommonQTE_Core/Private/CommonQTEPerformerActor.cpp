@@ -64,6 +64,7 @@ void ACommonQTEPerformerActor::SetInitialStateSnapshot(const FCommonQTEStateSnap
 	ResetPredictedStateFromInitialState();
 	RouteInitialStatePresentationMessages();
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Performer initial state snapshot set. Handle=%d Performer=%s CellCount=%d"), FCommonQTELog::HandleValue(InitialStateSnapshot.WholeHandle), *GetNameSafe(this), InitialStateSnapshot.CellContents.Num());
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 const FCommonQTEStateSnapshot& ACommonQTEPerformerActor::GetInitialStateSnapshot() const
@@ -74,6 +75,21 @@ const FCommonQTEStateSnapshot& ACommonQTEPerformerActor::GetInitialStateSnapshot
 const FCommonQTEStateSnapshot& ACommonQTEPerformerActor::GetPredictedStateSnapshot() const
 {
 	return PredictedStateSnapshot;
+}
+
+FCommonQTEHandle ACommonQTEPerformerActor::GetCommonQTEHandle() const
+{
+	return bHasInitialStateSnapshot ? PredictedStateSnapshot.WholeHandle : InitialStateSnapshot.WholeHandle;
+}
+
+bool ACommonQTEPerformerActor::HasCommonQTEPresentationStateSnapshot() const
+{
+	return bHasInitialStateSnapshot || InitialStateSnapshot.WholeHandle.IsValid();
+}
+
+FCommonQTEStateSnapshot ACommonQTEPerformerActor::GetCommonQTEPresentationStateSnapshot() const
+{
+	return bHasInitialStateSnapshot ? PredictedStateSnapshot : InitialStateSnapshot;
 }
 
 void ACommonQTEPerformerActor::EnqueuePredictionMessage(const FCommonQTEPerformerPredictionMessage& Message)
@@ -209,6 +225,7 @@ void ACommonQTEPerformerActor::OnRep_InitialStateSnapshot()
 	ResetPredictedStateFromInitialState();
 	RouteInitialStatePresentationMessages();
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Performer initial state snapshot replicated. Handle=%d Performer=%s CellCount=%d"), FCommonQTELog::HandleValue(InitialStateSnapshot.WholeHandle), *GetNameSafe(this), InitialStateSnapshot.CellContents.Num());
+	ReceiveCommonQTEPresentationStateChanged();
 }
 
 void ACommonQTEPerformerActor::ReceivePredictionMessages(const TArray<FCommonQTEPerformerPredictionMessage>& Messages)
