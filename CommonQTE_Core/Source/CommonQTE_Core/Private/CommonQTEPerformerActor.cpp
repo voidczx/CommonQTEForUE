@@ -65,6 +65,10 @@ void ACommonQTEPerformerActor::SetInitialStateSnapshot(const FCommonQTEStateSnap
 	RouteInitialStatePresentationMessages();
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Performer initial state snapshot set. Handle=%d Performer=%s CellCount=%d"), FCommonQTELog::HandleValue(InitialStateSnapshot.WholeHandle), *GetNameSafe(this), InitialStateSnapshot.CellContents.Num());
 	ReceiveCommonQTEPresentationStateChanged();
+	if (!RollBackMessageQueue.IsEmpty())
+	{
+		ScheduleRollBackDrain();
+	}
 }
 
 const FCommonQTEStateSnapshot& ACommonQTEPerformerActor::GetInitialStateSnapshot() const
@@ -226,6 +230,10 @@ void ACommonQTEPerformerActor::OnRep_InitialStateSnapshot()
 	RouteInitialStatePresentationMessages();
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Performer initial state snapshot replicated. Handle=%d Performer=%s CellCount=%d"), FCommonQTELog::HandleValue(InitialStateSnapshot.WholeHandle), *GetNameSafe(this), InitialStateSnapshot.CellContents.Num());
 	ReceiveCommonQTEPresentationStateChanged();
+	if (!RollBackMessageQueue.IsEmpty())
+	{
+		ScheduleRollBackDrain();
+	}
 }
 
 void ACommonQTEPerformerActor::ReceivePredictionMessages(const TArray<FCommonQTEPerformerPredictionMessage>& Messages)
@@ -283,6 +291,12 @@ void ACommonQTEPerformerActor::ScheduleRollBackDrain()
 		return;
 	}
 
+	if (!bHasInitialStateSnapshot)
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("Rollback drain delayed because initial state snapshot is missing. QueueCount=%d Performer=%s"), RollBackMessageQueue.Num(), *GetNameSafe(this));
+		return;
+	}
+
 	UWorld* World = GetWorld();
 	if (World == nullptr)
 	{
@@ -327,6 +341,12 @@ void ACommonQTEPerformerActor::DrainLocalPredictionMessages()
 void ACommonQTEPerformerActor::DrainRollBackMessages()
 {
 	bRollBackDrainScheduled = false;
+
+	if (!bHasInitialStateSnapshot)
+	{
+		UE_LOG(LogCommonQTE, Verbose, TEXT("Rollback drain skipped because initial state snapshot is missing. QueueCount=%d Performer=%s"), RollBackMessageQueue.Num(), *GetNameSafe(this));
+		return;
+	}
 
 	const TArray<FCommonQTEPerformerRollBackMessage> Messages = ConsumeRollBackMessages();
 	UE_LOG(LogCommonQTE, Verbose, TEXT("Rollback drain started. MessageCount=%d Performer=%s"), Messages.Num(), *GetNameSafe(this));
